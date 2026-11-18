@@ -115,6 +115,102 @@ app.get('/api/info', async (req, res) => {
   }
 });
 
+// 2b. Playlist extraction endpoint
+app.get('/api/playlist', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  // Handle Demo playlist
+  if (url.includes('demo') || url.includes('test')) {
+    return res.json({
+      id: 'demo-playlist',
+      title: 'Botanical 320 kbps Master Playlist',
+      trackCount: 3,
+      tracks: [
+        {
+          id: 'demo-p1',
+          title: 'Emerald Resonance (Part 1)',
+          artist: 'Forest Echoes',
+          duration: 185,
+          durationFormatted: '3:05',
+          thumbnail: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+          url: 'demo-1',
+          status: 'pending',
+        },
+        {
+          id: 'demo-p2',
+          title: 'Mitti Earth Soundscape',
+          artist: 'Ambient Studio',
+          duration: 210,
+          durationFormatted: '3:30',
+          thumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=800&auto=format&fit=crop',
+          url: 'demo-2',
+          status: 'pending',
+        },
+        {
+          id: 'demo-p3',
+          title: 'Forest Deep Bass Symphony',
+          artist: 'Botanical Waves',
+          duration: 240,
+          durationFormatted: '4:00',
+          thumbnail: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop',
+          url: 'demo-3',
+          status: 'pending',
+        },
+      ]
+    });
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `${YTDLP_BIN} --flat-playlist -J --no-warnings --playlist-end 50 "${url}"`,
+      { timeout: 30000, maxBuffer: 20 * 1024 * 1024 }
+    );
+
+    const data = JSON.parse(stdout);
+    const rawEntries = Array.isArray(data.entries) ? data.entries : [];
+    const tracks = rawEntries
+      .filter((entry) => entry && (entry.id || entry.url) && entry.title)
+      .map((entry, index) => {
+        const durationSec = entry.duration || 210;
+        const entryId = entry.id || `track-${index + 1}`;
+        const trackUrl = entry.url && entry.url.startsWith('http')
+          ? entry.url
+          : `https://www.youtube.com/watch?v=${entryId}`;
+        const thumb =
+          (entry.thumbnails && entry.thumbnails.length > 0 && entry.thumbnails[entry.thumbnails.length - 1].url) ||
+          `https://img.youtube.com/vi/${entryId}/hqdefault.jpg`;
+
+        return {
+          id: entryId,
+          title: entry.title || `Track ${index + 1}`,
+          artist: entry.uploader || entry.channel || data.uploader || 'Featured Artist',
+          duration: durationSec,
+          durationFormatted: formatDuration(durationSec),
+          thumbnail: thumb,
+          url: trackUrl,
+          status: 'pending',
+        };
+      });
+
+    res.json({
+      id: data.id || 'playlist',
+      title: data.title || 'YouTube Playlist',
+      trackCount: tracks.length,
+      tracks,
+    });
+  } catch (err) {
+    console.error('Playlist extraction error:', err.message);
+    res.status(500).json({
+      error: 'Failed to extract playlist. Ensure the playlist is public and accessible.',
+      details: err.message,
+    });
+  }
+});
+
 // 3. Audio Streaming & 320 kbps Transcoding endpoint
 app.get('/api/download', async (req, res) => {
   const { url, title } = req.query;

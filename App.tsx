@@ -12,8 +12,14 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { THEME } from './constants/theme';
-import { MediaMetadata, DownloadProgress, DownloadStatus, DownloadResult } from './types/audio';
-import { fetchMediaInfo } from './services/apiService';
+import {
+  MediaMetadata,
+  DownloadProgress,
+  DownloadStatus,
+  DownloadResult,
+  PlaylistMetadata,
+} from './types/audio';
+import { fetchMediaInfo, fetchPlaylistInfo } from './services/apiService';
 import { downloadAndSaveAudio, startNativeBrowserDownload } from './services/downloadService';
 import { getAudioDownloadUrl } from './services/apiService';
 import {
@@ -26,14 +32,22 @@ import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
 import { UrlInputCard } from './components/UrlInputCard';
 import { PreviewCard } from './components/PreviewCard';
+import { PlaylistCard } from './components/PlaylistCard';
 import { DownloadProgressBar } from './components/DownloadProgressBar';
 import { SuccessModal } from './components/SuccessModal';
 import { ErrorBanner } from './components/ErrorBanner';
 
 export default function App() {
+  const [inputMode, setInputMode] = useState<'single' | 'playlist'>('single');
   const [url, setUrl] = useState<string>('');
   const [status, setStatus] = useState<DownloadStatus>('idle');
   const [metadata, setMetadata] = useState<MediaMetadata | null>(null);
+  const [playlist, setPlaylist] = useState<PlaylistMetadata | null>(null);
+  const [isDownloadingPlaylist, setIsDownloadingPlaylist] = useState<boolean>(false);
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(0);
+  const [currentTrackProgress, setCurrentTrackProgress] = useState<number>(0);
+  const [playlistCompletedCount, setPlaylistCompletedCount] = useState<number>(0);
+
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [downloadResult, setDownloadResult] = useState<DownloadResult | null>(null);
@@ -52,7 +66,7 @@ export default function App() {
     setIsBackendOnline(true);
   }, []);
 
-  // 1. Fetch metadata step
+  // 1. Fetch metadata step (Single song or Playlist)
   const handleFetchInfo = async () => {
     if (!url.trim()) return;
 
@@ -60,25 +74,34 @@ export default function App() {
     setErrorMessage(null);
     setStatus('fetching_info');
     setMetadata(null);
+    setPlaylist(null);
     setDownloadResult(null);
 
     try {
-      const data = await fetchMediaInfo(url);
-      setMetadata(data);
-      setStatus('ready');
-      triggerSuccessHaptic();
+      if (inputMode === 'playlist') {
+        const plData = await fetchPlaylistInfo(url);
+        setPlaylist(plData);
+        setPlaylistCompletedCount(0);
+        setStatus('ready');
+        triggerSuccessHaptic();
+      } else {
+        const data = await fetchMediaInfo(url);
+        setMetadata(data);
+        setStatus('ready');
+        triggerSuccessHaptic();
+      }
     } catch (err: any) {
       console.error('Fetch error:', err);
       setErrorMessage(
         err.message ||
-          'Failed to extract media information. Check the link and ensure it is public.'
+          'Failed to extract information. Check the link and ensure it is public.'
       );
       setStatus('error');
       triggerErrorHaptic();
     }
   };
 
-  // 2. Start 320 kbps streaming download step
+  // 2. Start 320 kbps streaming download step (Single Track)
   const handleStartDownload = async () => {
     if (!metadata) return;
 
@@ -119,11 +142,69 @@ export default function App() {
     }
   };
 
-  // 3. Reset to prepare another track
+  // 2b. Start Sequential 320 kbps Download Queue (Playlist - One by One)
+  const handleDownloadAllPlaylist = async () => {
+    if (!playlist || playlist.tracks.length === 0 || isDownloadingPlaylist) return;
+
+    setIsDownloadingPlaylist(true);
+    setPlaylistCompletedCount(0);
+    setErrorMessage(null);
+
+    const updatedTracks = [...playlist.tracks];
+
+    for (let i = 0; i < updatedTracks.length; i++) {
+      setCurrentPlaylistIndex(i);
+      setCurrentTrackProgress(0);
+
+      const track = updatedTracks[i];
+      track.status = 'downloading';
+      setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+
+      const trackMeta: MediaMetadata = {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        duration: track.duration,
+        durationFormatted: track.durationFormatted,
+        thumbnail: track.thumbnail,
+        source: 'YouTube Playlist',
+        bitrate: '320 kbps',
+        qualityBadge: 'Ultra HD 320 kbps',
+        estimatedSizeMb: `${((track.duration * 40) / 1024).toFixed(1)} MB`,
+        url: track.url,
+      };
+
+      try {
+        await downloadAndSaveAudio({
+          metadata: trackMeta,
+          onProgress: (p) => {
+            setCurrentTrackProgress(p.percentage);
+          },
+          onStatusChange: () => {},
+        });
+
+        track.status = 'completed';
+        setPlaylistCompletedCount((prev) => prev + 1);
+      } catch (err) {
+        console.warn(`Failed to download track ${track.title}:`, err);
+        track.status = 'error';
+      }
+
+      setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+    }
+
+    setIsDownloadingPlaylist(false);
+    triggerSuccessHaptic();
+  };
+
+  // 3. Reset to prepare another track or playlist
   const handleReset = () => {
     setUrl('');
     setStatus('idle');
     setMetadata(null);
+    setPlaylist(null);
+    setIsDownloadingPlaylist(false);
+    setPlaylistCompletedCount(0);
     setDownloadResult(null);
     setErrorMessage(null);
     setProgress({
@@ -164,6 +245,15 @@ export default function App() {
               }}
               onSubmit={handleFetchInfo}
               isLoading={status === 'fetching_info'}
+              mode={inputMode}
+              onModeChange={(newMode) => {
+                setInputMode(newMode);
+                setUrl('');
+                setMetadata(null);
+                setPlaylist(null);
+                setStatus('idle');
+                setErrorMessage(null);
+              }}
             />
 
             {/* Error Message Banner */}
@@ -174,12 +264,24 @@ export default function App() {
               />
             )}
 
-            {/* Preview Card (Shows extracted metadata + locked 320 kbps badge) */}
+            {/* Single Track Preview Card (Shows extracted metadata + locked 320 kbps badge) */}
             {metadata && (status === 'ready' || status === 'downloading') && (
               <PreviewCard
                 metadata={metadata}
                 onDownloadPress={handleStartDownload}
                 isDownloading={status === 'downloading'}
+              />
+            )}
+
+            {/* Playlist Preview Card & Download Queue */}
+            {playlist && (status === 'ready' || isDownloadingPlaylist) && (
+              <PlaylistCard
+                playlist={playlist}
+                onDownloadAll={handleDownloadAllPlaylist}
+                isDownloadingAll={isDownloadingPlaylist}
+                currentDownloadIndex={currentPlaylistIndex}
+                currentTrackProgress={currentTrackProgress}
+                completedCount={playlistCompletedCount}
               />
             )}
 

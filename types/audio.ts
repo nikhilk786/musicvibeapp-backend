@@ -35,3 +35,22 @@ export interface DownloadResult {
   filename: string;
   fileSizeBytes: number;
 }
+
+export interface PlaylistTrack {
+  id: string;
+  title: string;
+  artist: string;
+  duration: number;
+  durationFormatted: string;
+  thumbnail: string | null;
+  url: string;
+  status: 'pending' | 'downloading' | 'completed' | 'error';
+  progress?: number;
+}
+
+export interface PlaylistMetadata {
+  id: string;
+  title: string;
+  trackCount: number;
+  tracks: PlaylistTrack[];
+}

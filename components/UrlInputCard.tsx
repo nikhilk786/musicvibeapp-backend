@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Clipboard, Check, Sparkles, ArrowRight, X } from 'lucide-react-native';
+import { Clipboard, Check, Sparkles, ArrowRight, X, Music, ListMusic } from 'lucide-react-native';
 import { THEME } from '../constants/theme';
 import { pasteFromClipboard, triggerLightHaptic, triggerSelectionHaptic } from '../services/deviceUtils';
 
@@ -17,6 +17,8 @@ interface UrlInputCardProps {
   onUrlChange: (newUrl: string) => void;
   onSubmit: () => void;
   isLoading: boolean;
+  mode?: 'single' | 'playlist';
+  onModeChange?: (mode: 'single' | 'playlist') => void;
 }
 
 export const UrlInputCard: React.FC<UrlInputCardProps> = ({
@@ -24,6 +26,8 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   onUrlChange,
   onSubmit,
   isLoading,
+  mode = 'single',
+  onModeChange,
 }) => {
   const [justPasted, setJustPasted] = useState(false);
 
@@ -39,7 +43,11 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
 
   const handleInsertDemo = () => {
     triggerLightHaptic();
-    onUrlChange('https://soundcloud.com/demo/emerald-resonance-320kbps');
+    if (mode === 'playlist') {
+      onUrlChange('https://www.youtube.com/playlist?list=demo-playlist');
+    } else {
+      onUrlChange('https://soundcloud.com/demo/emerald-resonance-320kbps');
+    }
   };
 
   const handleClear = () => {
@@ -51,11 +59,58 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
 
   return (
     <View style={styles.card}>
+      {/* Mode Switcher Tabs */}
+      {onModeChange && (
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            onPress={() => {
+              triggerLightHaptic();
+              onModeChange('single');
+            }}
+            style={[styles.tabBtn, mode === 'single' && styles.tabBtnActive]}
+            activeOpacity={0.7}
+          >
+            <Music
+              size={13}
+              color={mode === 'single' ? THEME.colors.primary : THEME.colors.textSubtle}
+            />
+            <Text
+              style={[styles.tabText, mode === 'single' && styles.tabTextActive]}
+            >
+              Single Track
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              triggerLightHaptic();
+              onModeChange('playlist');
+            }}
+            style={[styles.tabBtn, mode === 'playlist' && styles.tabBtnActive]}
+            activeOpacity={0.7}
+          >
+            <ListMusic
+              size={13}
+              color={mode === 'playlist' ? THEME.colors.primary : THEME.colors.textSubtle}
+            />
+            <Text
+              style={[styles.tabText, mode === 'playlist' && styles.tabTextActive]}
+            >
+              Playlist
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Input container */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.textInput}
-          placeholder="Paste link here..."
+          placeholder={
+            mode === 'playlist'
+              ? 'Paste YouTube playlist link here...'
+              : 'Paste YouTube or audio link here...'
+          }
           placeholderTextColor={THEME.colors.textSubtle}
           value={url}
           onChangeText={onUrlChange}
@@ -106,7 +161,9 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           activeOpacity={0.7}
         >
           <Sparkles size={11} color={THEME.colors.textSubtle} />
-          <Text style={styles.demoLinkText}>Try Demo Track</Text>
+          <Text style={styles.demoLinkText}>
+            {mode === 'playlist' ? 'Try Demo Playlist' : 'Try Demo Track'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -132,7 +189,9 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           {isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={THEME.colors.primary} />
-              <Text style={styles.loadingText}>Extracting Audio...</Text>
+              <Text style={styles.loadingText}>
+                {mode === 'playlist' ? 'Extracting Playlist...' : 'Extracting Audio...'}
+              </Text>
             </View>
           ) : (
             <View style={styles.buttonContent}>
@@ -142,7 +201,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
                   isButtonDisabled && styles.disabledButtonText,
                 ]}
               >
-                Extract Audio
+                {mode === 'playlist' ? 'Extract Playlist' : 'Extract Audio'}
               </Text>
               <ArrowRight
                 size={16}
@@ -165,6 +224,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.border,
     marginHorizontal: 16,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: THEME.colors.background,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  tabBtnActive: {
+    backgroundColor: THEME.colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: THEME.colors.textSubtle,
+  },
+  tabTextActive: {
+    color: THEME.colors.text,
+    fontWeight: '700',
   },
   inputContainer: {
     flexDirection: 'row',

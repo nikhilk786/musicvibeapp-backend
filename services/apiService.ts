@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { MediaMetadata } from '../types/audio';
+import { MediaMetadata, PlaylistMetadata } from '../types/audio';
 
 const CLOUDFLARE_TUNNEL_URL = 'https://automatic-buttons-maui-don.trycloudflare.com';
 const BACKEND_PORT = 5005;
@@ -137,4 +137,32 @@ export function getAudioDownloadUrl(targetUrl: string, title?: string): string {
 
   // Points directly to the yt-dlp + ffmpeg 320 kbps streaming endpoint
   return `${baseUrl}/api/download?url=${encodeURIComponent(targetUrl)}&title=${safeTitle}&quality=320`;
+}
+
+/**
+ * Fetch YouTube Playlist metadata and track list
+ */
+export async function fetchPlaylistInfo(targetUrl: string): Promise<PlaylistMetadata> {
+  const cleanUrl = targetUrl.trim();
+  const baseUrl = getBaseApiUrl();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  try {
+    const res = await fetch(`${baseUrl}/api/playlist?url=${encodeURIComponent(cleanUrl)}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to extract playlist. Ensure it is public.');
+    }
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    throw new Error(err.message || 'Playlist extraction failed. Check connection.');
+  }
 }
