@@ -1,0 +1,14 @@
+{
+  "name": "music-downloader-backend",
+  "version": "1.0.0",
+  "description": "Ultra HD 320 kbps Audio Streaming Backend with yt-dlp and FFmpeg",
+  "main": "index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

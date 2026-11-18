@@ -4,7 +4,9 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 
-const YTDLP_BIN = fs.existsSync('/tmp/yt-dlp') ? '/tmp/yt-dlp' : 'yt-dlp';
+const YTDLP_BIN = fs.existsSync('/usr/local/bin/yt-dlp')
+  ? '/usr/local/bin/yt-dlp'
+  : (fs.existsSync('/tmp/yt-dlp') ? '/tmp/yt-dlp' : 'yt-dlp');
 const execAsync = promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -35,7 +37,7 @@ app.get('/api/health', async (req, res) => {
   let ffmpegInstalled = false;
 
   try {
-    await execAsync('yt-dlp --version');
+    await execAsync(`${YTDLP_BIN} --version`);
     ytDlpInstalled = true;
   } catch (e) {}
 
