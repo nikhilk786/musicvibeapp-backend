@@ -16,6 +16,7 @@ import {
   Clock,
   Music,
   Check,
+  AlertCircle,
 } from 'lucide-react-native';
 import { PlaylistMetadata, PlaylistTrack } from '../types/audio';
 import { THEME } from '../constants/theme';
@@ -378,6 +379,8 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
                   <View style={styles.currentIndicator}>
                     <ActivityIndicator size="small" color={THEME.colors.primary} />
                   </View>
+                ) : track.status === 'error' ? (
+                  <AlertCircle size={15} color="#ef4444" />
                 ) : onDownloadSingleTrack && !isDownloadingAll ? (
                   <TouchableOpacity
                     onPress={() => {

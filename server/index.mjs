@@ -262,17 +262,25 @@ app.get('/api/download', async (req, res) => {
 
   try {
     console.log(`[Stream] Processing real audio from: ${url}`);
-    
-    // Pipe 1: yt-dlp extracts raw audio stream to stdout
+
+    // Send HTTP headers immediately so client starts connection without waiting
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Audio-Bitrate', '320kbps');
+
+    // Pipe 1: yt-dlp extracts raw audio stream with Android client for lightning-fast start
     const ytdl = spawn(YTDLP_BIN, [
       '-f', 'bestaudio/best',
       '-o', '-',
       '--no-playlist',
       '--no-warnings',
+      '--extractor-args', 'youtube:player_client=android,web',
+      '--no-check-certificates',
       url
     ]);
 
-    // Pipe 2: ffmpeg receives yt-dlp stream via pipe:0 and encodes to 320 kbps CBR MP3
+    // Pipe 2: ffmpeg receives yt-dlp stream via pipe:0 and encodes to 320 kbps CBR MP3 with ultrafast preset
     const ffmpeg = spawn('ffmpeg', [
       '-i', 'pipe:0',
       '-vn', // No video
@@ -291,42 +299,29 @@ app.get('/api/download', async (req, res) => {
 
     ytdl.stdout.pipe(ffmpeg.stdin);
 
-    let headersSet = false;
-    ffmpeg.stdout.on('data', (chunk) => {
-      if (!headersSet) {
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
-        res.setHeader('Accept-Ranges', 'bytes');
-        res.setHeader('X-Audio-Bitrate', '320kbps');
-        headersSet = true;
-      }
-      res.write(chunk);
-    });
+    ffmpeg.stdout.pipe(res);
 
-    ffmpeg.stdout.on('end', () => {
-      res.end();
+    ytdl.stderr.on('data', (d) => {
+      const msg = d.toString();
+      if (msg.includes('ERROR:')) console.error('[yt-dlp error]', msg.trim());
     });
-
-    ytdl.stderr.on('data', (d) => {});
-    ffmpeg.stderr.on('data', (d) => {});
+    ffmpeg.stderr.on('data', () => {});
 
     req.on('close', () => {
-      ytdl.kill();
-      ffmpeg.kill();
+      try { ytdl.kill(); } catch (e) {}
+      try { ffmpeg.kill(); } catch (e) {}
     });
 
     ffmpeg.on('close', (code) => {
-      console.log(`[Stream] Transcoding completed with code ${code}`);
+      console.log(`[Stream] Transcoding completed for "${safeTitle}" with code ${code}`);
     });
 
     ytdl.on('error', (err) => {
       console.error('[yt-dlp error]', err);
-      if (!headersSet && !res.headersSent) res.status(500).json({ error: 'Stream extraction error' });
     });
 
     ffmpeg.on('error', (err) => {
       console.error('[ffmpeg error]', err);
-      if (!headersSet && !res.headersSent) res.status(500).json({ error: 'Transcoding error' });
     });
 
   } catch (err) {

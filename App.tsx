@@ -18,6 +18,7 @@ import {
   DownloadStatus,
   DownloadResult,
   PlaylistMetadata,
+  PlaylistTrack,
 } from './types/audio';
 import { fetchMediaInfo, fetchPlaylistInfo } from './services/apiService';
 import { downloadAndSaveAudio, startNativeBrowserDownload } from './services/downloadService';
@@ -163,7 +164,7 @@ export default function App() {
       const trackIndexInFull = updatedTracks.findIndex((t) => t.id === targetTrack.id);
       if (trackIndexInFull !== -1) {
         updatedTracks[trackIndexInFull].status = 'downloading';
-        setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+        setPlaylist((prev) => (prev ? { ...prev, tracks: [...updatedTracks] } : null));
       }
 
       const trackMeta: MediaMetadata = {
@@ -193,18 +194,58 @@ export default function App() {
           updatedTracks[trackIndexInFull].status = 'completed';
         }
         setPlaylistCompletedCount((prev) => prev + 1);
-      } catch (err) {
-        console.warn(`Failed to download track ${targetTrack.title}:`, err);
+      } catch (err: any) {
+        console.error(`Failed to download track ${targetTrack.title}:`, err);
         if (trackIndexInFull !== -1) {
           updatedTracks[trackIndexInFull].status = 'error';
         }
       }
 
-      setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+      setPlaylist((prev) => (prev ? { ...prev, tracks: [...updatedTracks] } : null));
     }
 
     setIsDownloadingPlaylist(false);
     triggerSuccessHaptic();
+  };
+
+  // 2c. Download a single track directly from playlist preview
+  const handleDownloadSingleTrackFromPlaylist = async (track: PlaylistTrack) => {
+    if (isDownloadingPlaylist) return;
+    const trackMeta: MediaMetadata = {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      duration: track.duration,
+      durationFormatted: track.durationFormatted,
+      thumbnail: track.thumbnail,
+      source: 'YouTube Playlist',
+      bitrate: '320 kbps',
+      qualityBadge: 'Ultra HD 320 kbps',
+      estimatedSizeMb: `${((track.duration * 40) / 1024).toFixed(1)} MB`,
+      url: track.url,
+    };
+
+    setMetadata(trackMeta);
+    setStatus('downloading');
+    setStatusMessage(`Downloading "${track.title}"...`);
+    setErrorMessage(null);
+
+    try {
+      const result = await downloadAndSaveAudio({
+        metadata: trackMeta,
+        onProgress: (p) => setProgress(p),
+        onStatusChange: (msg) => setStatusMessage(msg),
+      });
+
+      setDownloadResult(result);
+      setStatus('completed');
+      triggerSuccessHaptic();
+    } catch (err: any) {
+      console.error('Single track download error:', err);
+      setErrorMessage(err.message || 'Download failed. Check connection.');
+      setStatus('error');
+      triggerErrorHaptic();
+    }
   };
 
   // 3. Reset to prepare another track or playlist
@@ -288,6 +329,7 @@ export default function App() {
               <PlaylistCard
                 playlist={playlist}
                 onDownloadSelected={handleDownloadSelectedPlaylist}
+                onDownloadSingleTrack={handleDownloadSingleTrackFromPlaylist}
                 isDownloadingAll={isDownloadingPlaylist}
                 currentDownloadIndex={currentPlaylistIndex}
                 currentTrackProgress={currentTrackProgress}
