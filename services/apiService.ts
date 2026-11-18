@@ -115,10 +115,11 @@ export async function fetchMediaInfo(targetUrl: string): Promise<MediaMetadata> 
  */
 export function getAudioDownloadUrl(targetUrl: string, title?: string): string {
   const baseUrl = getBaseApiUrl();
+  const cleanUrl = targetUrl.trim().split('&list=')[0];
   const safeTitle = encodeURIComponent((title || 'Downloaded_Audio').replace(/[^a-zA-Z0-9\s-_]/g, '').trim());
 
-  // Points directly to the yt-dlp + ffmpeg 320 kbps streaming endpoint
-  return `${baseUrl}/api/download?url=${encodeURIComponent(targetUrl)}&title=${safeTitle}&quality=320`;
+  // Points directly to the yt-dlp + ffmpeg 320 kbps endpoint
+  return `${baseUrl}/api/download?url=${encodeURIComponent(cleanUrl)}&title=${safeTitle}&quality=320`;
 }
 
 /**

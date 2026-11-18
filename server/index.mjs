@@ -218,7 +218,7 @@ app.get('/api/playlist', async (req, res) => {
   }
 });
 
-// 3. Audio Streaming & 320 kbps Transcoding endpoint
+// 3. Audio Extraction & 320 kbps MP3 endpoint
 app.get('/api/download', async (req, res) => {
   const { url, title } = req.query;
 
@@ -228,7 +228,7 @@ app.get('/api/download', async (req, res) => {
 
   const safeTitle = sanitizeFilename(title);
 
-  // If Demo / Offline mode: generate a high-fidelity synthetic 320 kbps audio stream with harmonic warmth
+  // If Demo / Offline mode: generate a high-fidelity synthetic 320 kbps audio stream
   if (url.includes('demo') || url.includes('test') || url.includes('sample')) {
     console.log('[Stream] Generating Demo 320 kbps MP3 stream...');
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -260,79 +260,34 @@ app.get('/api/download', async (req, res) => {
     return;
   }
 
+  const tempId = `song_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const tempPath = `/tmp/${tempId}.mp3`;
+  const template = `/tmp/${tempId}.%(ext)s`;
+
+  console.log(`[Download] Starting native 320 kbps extraction for: ${url}`);
+
   try {
-    console.log(`[Stream] Processing real audio from: ${url}`);
+    // Native yt-dlp + ffmpeg 320 kbps MP3 conversion with all headers handled
+    const cmd = `${YTDLP_BIN} -x --audio-format mp3 --audio-quality 320k --no-playlist --no-warnings -o "${template}" "${url}"`;
+    await execAsync(cmd, { timeout: 60000 });
 
-    // Send and flush HTTP headers immediately so client starts connection without waiting
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('X-Audio-Bitrate', '320kbps');
-    if (typeof res.flushHeaders === 'function') {
-      res.flushHeaders();
+    if (fs.existsSync(tempPath)) {
+      console.log(`[Download] Conversion complete! Serving ${tempPath} (${safeTitle}.mp3) to client...`);
+      res.download(tempPath, `${safeTitle}.mp3`, (err) => {
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch (e) {}
+      });
+    } else {
+      throw new Error('320 kbps MP3 file was not generated.');
     }
-
-    // Pipe 1: yt-dlp extracts raw audio stream with Android client for lightning-fast start
-    const ytdl = spawn(YTDLP_BIN, [
-      '-f', 'bestaudio/best',
-      '-o', '-',
-      '--no-playlist',
-      '--no-warnings',
-      '--extractor-args', 'youtube:player_client=android,web',
-      '--no-check-certificates',
-      url
-    ]);
-
-    // Pipe 2: ffmpeg receives yt-dlp stream with small probesize for zero-buffer instant start
-    const ffmpeg = spawn('ffmpeg', [
-      '-probesize', '64k',
-      '-analyzeduration', '500k',
-      '-i', 'pipe:0',
-      '-vn', // No video
-      '-codec:a', 'libmp3lame',
-      '-b:a', '320k', // Strict 320 kbps CBR
-      '-ar', '44100', // 44.1 kHz standard
-      '-id3v2_version', '3',
-      '-metadata', `title=${title || 'Downloaded Audio'}`,
-      '-f', 'mp3',
-      'pipe:1'
-    ]);
-
-    // Prevent uncaught EPIPE
-    ffmpeg.stdin.on('error', () => {});
-    ytdl.stdout.on('error', () => {});
-
-    ytdl.stdout.pipe(ffmpeg.stdin);
-
-    ffmpeg.stdout.pipe(res);
-
-    ytdl.stderr.on('data', (d) => {
-      const msg = d.toString();
-      if (msg.includes('ERROR:')) console.error('[yt-dlp error]', msg.trim());
-    });
-    ffmpeg.stderr.on('data', () => {});
-
-    req.on('close', () => {
-      try { ytdl.kill(); } catch (e) {}
-      try { ffmpeg.kill(); } catch (e) {}
-    });
-
-    ffmpeg.on('close', (code) => {
-      console.log(`[Stream] Transcoding completed for "${safeTitle}" with code ${code}`);
-    });
-
-    ytdl.on('error', (err) => {
-      console.error('[yt-dlp error]', err);
-    });
-
-    ffmpeg.on('error', (err) => {
-      console.error('[ffmpeg error]', err);
-    });
-
   } catch (err) {
-    console.error('Stream spawn error:', err);
+    console.error('[Download error]', err.message);
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch (e) {}
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to stream audio' });
+      res.status(500).json({ error: 'Failed to extract audio', details: err.message });
     }
   }
 });
