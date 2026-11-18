@@ -31,6 +31,11 @@ function sanitizeFilename(title) {
     .substring(0, 80);
 }
 
+// Root welcome endpoint
+app.get('/', (req, res) => {
+  res.send('🎵 Music Downloader Backend is Live & Running on Render 24/7! Ultra HD 320 kbps Streaming Active.');
+});
+
 // 1. Health check endpoint
 app.get('/api/health', async (req, res) => {
   let ytDlpInstalled = false;

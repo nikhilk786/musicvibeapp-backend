@@ -2,32 +2,14 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { MediaMetadata, PlaylistMetadata } from '../types/audio';
 
-const CLOUDFLARE_TUNNEL_URL = 'https://automatic-buttons-maui-don.trycloudflare.com';
-const BACKEND_PORT = 5005;
-const HOST_LAN_IP = '192.168.1.33';
+const RENDER_BACKEND_URL = 'https://musicvibeapp-backend.onrender.com';
 
 /**
  * Dynamically resolves the backend streaming URL.
- * Uses public HTTPS tunnel so phone connects seamlessly without Wi-Fi port blocks!
+ * Connected to permanent 24/7 Cloud Server on Render (no laptop needed)!
  */
 export function getBaseApiUrl(): string {
-  if (CLOUDFLARE_TUNNEL_URL) {
-    return CLOUDFLARE_TUNNEL_URL;
-  }
-
-  const hostUri =
-    Constants.expoConfig?.hostUri ||
-    (Constants as any).manifest?.debuggerHost ||
-    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
-
-  if (hostUri && typeof hostUri === 'string') {
-    const host = hostUri.split(':')[0];
-    if (host && /^\d+\.\d+\.\d+\.\d+$/.test(host) && host !== '127.0.0.1') {
-      return `http://${host}:${BACKEND_PORT}`;
-    }
-  }
-
-  return `http://${HOST_LAN_IP}:${BACKEND_PORT}`;
+  return RENDER_BACKEND_URL;
 }
 
 function extractYouTubeId(url: string): string | null {
