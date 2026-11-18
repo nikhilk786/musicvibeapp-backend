@@ -89,10 +89,10 @@ app.get('/api/info', async (req, res) => {
   }
 
   try {
-    // Execute yt-dlp to extract metadata in JSON format
+    // Execute yt-dlp to extract metadata in JSON format with tv_samsung client to bypass bot check
     const { stdout } = await execAsync(
-      `${YTDLP_BIN} --dump-single-json --no-playlist --skip-download "${url}"`,
-      { timeout: 20000, maxBuffer: 10 * 1024 * 1024 }
+      `${YTDLP_BIN} --extractor-args "youtube:player_client=tv_samsung" --dump-single-json --no-playlist --skip-download "${url}"`,
+      { timeout: 25000, maxBuffer: 10 * 1024 * 1024 }
     );
 
     const data = JSON.parse(stdout);
@@ -173,7 +173,7 @@ app.get('/api/playlist', async (req, res) => {
 
   try {
     const { stdout } = await execAsync(
-      `${YTDLP_BIN} --flat-playlist -J --no-warnings --playlist-end 50 "${url}"`,
+      `${YTDLP_BIN} --extractor-args "youtube:player_client=tv_samsung" --flat-playlist -J --no-warnings --playlist-end 50 "${url}"`,
       { timeout: 30000, maxBuffer: 20 * 1024 * 1024 }
     );
 
@@ -267,8 +267,8 @@ app.get('/api/download', async (req, res) => {
   console.log(`[Download] Starting native 320 kbps extraction for: ${url}`);
 
   try {
-    // Native yt-dlp + ffmpeg 320 kbps MP3 conversion with all headers handled
-    const cmd = `${YTDLP_BIN} -x --audio-format mp3 --audio-quality 320k --no-playlist --no-warnings -o "${template}" "${url}"`;
+    // Native yt-dlp + ffmpeg 320 kbps MP3 conversion with tv_samsung client (zero bot check)
+    const cmd = `${YTDLP_BIN} --extractor-args "youtube:player_client=tv_samsung" -x --audio-format mp3 --audio-quality 320k --no-playlist --no-warnings -o "${template}" "${url}"`;
     await execAsync(cmd, { timeout: 60000 });
 
     if (fs.existsSync(tempPath)) {
