@@ -263,11 +263,14 @@ app.get('/api/download', async (req, res) => {
   try {
     console.log(`[Stream] Processing real audio from: ${url}`);
 
-    // Send HTTP headers immediately so client starts connection without waiting
+    // Send and flush HTTP headers immediately so client starts connection without waiting
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Audio-Bitrate', '320kbps');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
 
     // Pipe 1: yt-dlp extracts raw audio stream with Android client for lightning-fast start
     const ytdl = spawn(YTDLP_BIN, [
@@ -280,8 +283,10 @@ app.get('/api/download', async (req, res) => {
       url
     ]);
 
-    // Pipe 2: ffmpeg receives yt-dlp stream via pipe:0 and encodes to 320 kbps CBR MP3 with ultrafast preset
+    // Pipe 2: ffmpeg receives yt-dlp stream with small probesize for zero-buffer instant start
     const ffmpeg = spawn('ffmpeg', [
+      '-probesize', '64k',
+      '-analyzeduration', '500k',
       '-i', 'pipe:0',
       '-vn', // No video
       '-codec:a', 'libmp3lame',
