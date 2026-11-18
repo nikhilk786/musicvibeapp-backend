@@ -142,9 +142,12 @@ export default function App() {
     }
   };
 
-  // 2b. Start Sequential 320 kbps Download Queue (Playlist - One by One)
-  const handleDownloadAllPlaylist = async () => {
+  // 2b. Start Sequential 320 kbps Download Queue (Playlist - Selected Tracks One by One)
+  const handleDownloadSelectedPlaylist = async (selectedIds: string[]) => {
     if (!playlist || playlist.tracks.length === 0 || isDownloadingPlaylist) return;
+
+    const tracksToDownload = playlist.tracks.filter((t) => selectedIds.includes(t.id));
+    if (tracksToDownload.length === 0) return;
 
     setIsDownloadingPlaylist(true);
     setPlaylistCompletedCount(0);
@@ -152,26 +155,29 @@ export default function App() {
 
     const updatedTracks = [...playlist.tracks];
 
-    for (let i = 0; i < updatedTracks.length; i++) {
+    for (let i = 0; i < tracksToDownload.length; i++) {
       setCurrentPlaylistIndex(i);
       setCurrentTrackProgress(0);
 
-      const track = updatedTracks[i];
-      track.status = 'downloading';
-      setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+      const targetTrack = tracksToDownload[i];
+      const trackIndexInFull = updatedTracks.findIndex((t) => t.id === targetTrack.id);
+      if (trackIndexInFull !== -1) {
+        updatedTracks[trackIndexInFull].status = 'downloading';
+        setPlaylist({ ...playlist, tracks: [...updatedTracks] });
+      }
 
       const trackMeta: MediaMetadata = {
-        id: track.id,
-        title: track.title,
-        artist: track.artist,
-        duration: track.duration,
-        durationFormatted: track.durationFormatted,
-        thumbnail: track.thumbnail,
+        id: targetTrack.id,
+        title: targetTrack.title,
+        artist: targetTrack.artist,
+        duration: targetTrack.duration,
+        durationFormatted: targetTrack.durationFormatted,
+        thumbnail: targetTrack.thumbnail,
         source: 'YouTube Playlist',
         bitrate: '320 kbps',
         qualityBadge: 'Ultra HD 320 kbps',
-        estimatedSizeMb: `${((track.duration * 40) / 1024).toFixed(1)} MB`,
-        url: track.url,
+        estimatedSizeMb: `${((targetTrack.duration * 40) / 1024).toFixed(1)} MB`,
+        url: targetTrack.url,
       };
 
       try {
@@ -183,11 +189,15 @@ export default function App() {
           onStatusChange: () => {},
         });
 
-        track.status = 'completed';
+        if (trackIndexInFull !== -1) {
+          updatedTracks[trackIndexInFull].status = 'completed';
+        }
         setPlaylistCompletedCount((prev) => prev + 1);
       } catch (err) {
-        console.warn(`Failed to download track ${track.title}:`, err);
-        track.status = 'error';
+        console.warn(`Failed to download track ${targetTrack.title}:`, err);
+        if (trackIndexInFull !== -1) {
+          updatedTracks[trackIndexInFull].status = 'error';
+        }
       }
 
       setPlaylist({ ...playlist, tracks: [...updatedTracks] });
@@ -277,7 +287,7 @@ export default function App() {
             {playlist && (status === 'ready' || isDownloadingPlaylist) && (
               <PlaylistCard
                 playlist={playlist}
-                onDownloadAll={handleDownloadAllPlaylist}
+                onDownloadSelected={handleDownloadSelectedPlaylist}
                 isDownloadingAll={isDownloadingPlaylist}
                 currentDownloadIndex={currentPlaylistIndex}
                 currentTrackProgress={currentTrackProgress}

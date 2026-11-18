@@ -46,6 +46,7 @@ export interface PlaylistTrack {
   url: string;
   status: 'pending' | 'downloading' | 'completed' | 'error';
   progress?: number;
+  selected?: boolean;
 }
 
 export interface PlaylistMetadata {

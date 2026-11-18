@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -14,7 +15,7 @@ import {
   CheckCircle2,
   Clock,
   Music,
-  FolderCheck,
+  Check,
 } from 'lucide-react-native';
 import { PlaylistMetadata, PlaylistTrack } from '../types/audio';
 import { THEME } from '../constants/theme';
@@ -22,7 +23,8 @@ import { triggerLightHaptic, triggerMediumHaptic } from '../services/deviceUtils
 
 interface PlaylistCardProps {
   playlist: PlaylistMetadata;
-  onDownloadAll: () => void;
+  onDownloadSelected: (selectedIds: string[]) => void;
+  onDownloadSingleTrack?: (track: PlaylistTrack) => void;
   isDownloadingAll: boolean;
   currentDownloadIndex: number;
   currentTrackProgress: number;
@@ -31,18 +33,83 @@ interface PlaylistCardProps {
 
 export const PlaylistCard: React.FC<PlaylistCardProps> = ({
   playlist,
-  onDownloadAll,
+  onDownloadSelected,
+  onDownloadSingleTrack,
   isDownloadingAll,
   currentDownloadIndex,
   currentTrackProgress,
   completedCount,
 }) => {
-  const isAllCompleted = completedCount === playlist.tracks.length && playlist.tracks.length > 0;
+  // Track IDs selected for download
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    // By default, select first 10 tracks (or all if <= 10) so user doesn't wait forever for 50+ songs
+    const initialSet = new Set<string>();
+    const defaultCount = Math.min(10, playlist.tracks.length);
+    for (let i = 0; i < defaultCount; i++) {
+      if (playlist.tracks[i]?.id) {
+        initialSet.add(playlist.tracks[i].id);
+      }
+    }
+    return initialSet;
+  });
+
+  // Keep selectedIds updated when playlist changes
+  useEffect(() => {
+    const initialSet = new Set<string>();
+    const defaultCount = Math.min(10, playlist.tracks.length);
+    for (let i = 0; i < defaultCount; i++) {
+      if (playlist.tracks[i]?.id) {
+        initialSet.add(playlist.tracks[i].id);
+      }
+    }
+    setSelectedIds(initialSet);
+  }, [playlist.id, playlist.tracks.length]);
+
+  const toggleTrack = (id: string) => {
+    if (isDownloadingAll) return;
+    triggerLightHaptic();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectPreset = (count: number | 'all' | 'none') => {
+    if (isDownloadingAll) return;
+    triggerLightHaptic();
+    if (count === 'all') {
+      const allIds = new Set(playlist.tracks.map((t) => t.id));
+      setSelectedIds(allIds);
+    } else if (count === 'none') {
+      setSelectedIds(new Set());
+    } else {
+      const limit = Math.min(count, playlist.tracks.length);
+      const newIds = new Set<string>();
+      for (let i = 0; i < limit; i++) {
+        if (playlist.tracks[i]?.id) {
+          newIds.add(playlist.tracks[i].id);
+        }
+      }
+      setSelectedIds(newIds);
+    }
+  };
+
+  const selectedCount = selectedIds.size;
+  const isAllSelected = selectedCount === playlist.tracks.length && playlist.tracks.length > 0;
+  const isNoneSelected = selectedCount === 0;
 
   const handleStartDownload = () => {
+    if (selectedCount === 0 || isDownloadingAll) return;
     triggerMediumHaptic();
-    onDownloadAll();
+    onDownloadSelected(Array.from(selectedIds));
   };
+
+  const isAllCompleted = completedCount === selectedCount && selectedCount > 0;
 
   return (
     <View style={styles.card}>
@@ -56,18 +123,109 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
             {playlist.title}
           </Text>
           <Text style={styles.playlistSubtitle}>
-            {playlist.trackCount} tracks extracted • 320 kbps MP3
+            {playlist.trackCount} tracks found • 320 kbps Ultra HD
           </Text>
         </View>
       </View>
+
+      {/* Quick Selection Presets Bar */}
+      {!isDownloadingAll && (
+        <View style={styles.selectionBar}>
+          <View style={styles.selectionCountBox}>
+            <Text style={styles.selectionCountText}>
+              Selected: <Text style={styles.highlightNumber}>{selectedCount}</Text> of{' '}
+              {playlist.tracks.length}
+            </Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.presetsList}
+          >
+            <TouchableOpacity
+              onPress={() => selectPreset(5)}
+              style={[styles.presetChip, selectedCount === 5 && styles.presetChipActive]}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[styles.presetChipText, selectedCount === 5 && styles.presetChipTextActive]}
+              >
+                First 5
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => selectPreset(10)}
+              style={[
+                styles.presetChip,
+                selectedCount === Math.min(10, playlist.tracks.length) &&
+                  styles.presetChipActive,
+              ]}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.presetChipText,
+                  selectedCount === Math.min(10, playlist.tracks.length) &&
+                    styles.presetChipTextActive,
+                ]}
+              >
+                First 10
+              </Text>
+            </TouchableOpacity>
+
+            {playlist.tracks.length > 10 && (
+              <TouchableOpacity
+                onPress={() => selectPreset(20)}
+                style={[
+                  styles.presetChip,
+                  selectedCount === Math.min(20, playlist.tracks.length) &&
+                    styles.presetChipActive,
+                ]}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.presetChipText,
+                    selectedCount === Math.min(20, playlist.tracks.length) &&
+                      styles.presetChipTextActive,
+                  ]}
+                >
+                  First 20
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => selectPreset('all')}
+              style={[styles.presetChip, isAllSelected && styles.presetChipActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetChipText, isAllSelected && styles.presetChipTextActive]}>
+                All ({playlist.tracks.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => selectPreset('none')}
+              style={[styles.presetChip, isNoneSelected && styles.presetChipActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetChipText, isNoneSelected && styles.presetChipTextActive]}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
 
       {/* Live Download Status & Progress (if active) */}
       {isDownloadingAll && (
         <View style={styles.progressContainer}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel} numberOfLines={1}>
-              Downloading {currentDownloadIndex + 1}/{playlist.tracks.length}:{' '}
-              {playlist.tracks[currentDownloadIndex]?.title}
+              Downloading {currentDownloadIndex + 1}/{selectedCount}:{' '}
+              {playlist.tracks.find((t) => t.status === 'downloading')?.title || 'Processing...'}
             </Text>
             <Text style={styles.progressPercent}>{currentTrackProgress}%</Text>
           </View>
@@ -80,7 +238,7 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
             />
           </View>
           <Text style={styles.batchCounter}>
-            {completedCount} of {playlist.tracks.length} tracks saved to device
+            {completedCount} of {selectedCount} selected songs saved to device
           </Text>
         </View>
       )}
@@ -90,18 +248,25 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
         <View style={styles.allCompletedBox}>
           <CheckCircle2 size={18} color={THEME.colors.primary} strokeWidth={2.4} />
           <Text style={styles.allCompletedText}>
-            All {playlist.tracks.length} tracks downloaded & saved to device!
+            All {selectedCount} selected tracks saved to your device!
           </Text>
         </View>
       ) : (
         <TouchableOpacity
           onPress={handleStartDownload}
-          disabled={isDownloadingAll}
+          disabled={isDownloadingAll || selectedCount === 0}
           activeOpacity={0.85}
-          style={[styles.downloadBtnWrapper, isDownloadingAll && styles.disabledWrapper]}
+          style={[
+            styles.downloadBtnWrapper,
+            (isDownloadingAll || selectedCount === 0) && styles.disabledWrapper,
+          ]}
         >
           <LinearGradient
-            colors={THEME.gradients.primaryButton}
+            colors={
+              selectedCount === 0
+                ? ['#262d26', '#1a1f1a']
+                : THEME.gradients.primaryButton
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.gradientDownloadBtn}
@@ -110,14 +275,20 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
               <View style={styles.btnRow}>
                 <ActivityIndicator size="small" color="#0c0e0c" />
                 <Text style={styles.downloadBtnText}>
-                  Downloading Track {currentDownloadIndex + 1} of {playlist.tracks.length}...
+                  Downloading {currentDownloadIndex + 1} of {selectedCount}...
+                </Text>
+              </View>
+            ) : selectedCount === 0 ? (
+              <View style={styles.btnRow}>
+                <Text style={[styles.downloadBtnText, { color: THEME.colors.textSubtle }]}>
+                  Select Songs to Download
                 </Text>
               </View>
             ) : (
               <View style={styles.btnRow}>
                 <Download size={16} color="#0c0e0c" strokeWidth={2.4} />
                 <Text style={styles.downloadBtnText}>
-                  Download All ({playlist.tracks.length} Tracks)
+                  Download Selected ({selectedCount} Tracks)
                 </Text>
               </View>
             )}
@@ -125,24 +296,48 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
         </TouchableOpacity>
       )}
 
-      {/* Extracted Tracks List Preview */}
+      {/* Extracted Tracks List Preview with Checkboxes */}
       <View style={styles.trackListContainer}>
-        <Text style={styles.listHeading}>EXTRACTED SONGS</Text>
+        <View style={styles.listHeaderRow}>
+          <Text style={styles.listHeading}>SONGS ({playlist.tracks.length})</Text>
+          <Text style={styles.listSubHint}>Tap song to select / unselect</Text>
+        </View>
+
         {playlist.tracks.map((track, index) => {
-          const isCurrent = isDownloadingAll && currentDownloadIndex === index;
+          const isSelected = selectedIds.has(track.id);
+          const isCurrent = track.status === 'downloading';
           const isDone = track.status === 'completed';
 
           return (
-            <View
+            <TouchableOpacity
               key={track.id || index}
+              onPress={() => toggleTrack(track.id)}
+              disabled={isDownloadingAll}
+              activeOpacity={0.75}
               style={[
                 styles.trackRow,
+                isSelected && styles.trackRowSelected,
                 isCurrent && styles.trackRowActive,
                 isDone && styles.trackRowDone,
               ]}
             >
+              {/* Checkbox */}
+              <View
+                style={[
+                  styles.checkbox,
+                  isSelected && styles.checkboxSelected,
+                  isDone && styles.checkboxDone,
+                ]}
+              >
+                {isDone ? (
+                  <Check size={12} color="#0c0e0c" strokeWidth={3} />
+                ) : isSelected ? (
+                  <Check size={12} color="#0c0e0c" strokeWidth={3} />
+                ) : null}
+              </View>
+
               {/* Index Number */}
-              <Text style={[styles.trackIndex, isCurrent && styles.trackIndexActive]}>
+              <Text style={[styles.trackIndex, isSelected && styles.trackIndexSelected]}>
                 {index + 1}
               </Text>
 
@@ -162,6 +357,7 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
                 <Text
                   style={[
                     styles.trackTitle,
+                    isSelected && styles.trackTitleSelected,
                     isCurrent && styles.trackTitleActive,
                     isDone && styles.trackTitleDone,
                   ]}
@@ -174,7 +370,7 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
                 </Text>
               </View>
 
-              {/* Status Indicator */}
+              {/* Right Side Status / Quick Download */}
               <View style={styles.statusCol}>
                 {isDone ? (
                   <CheckCircle2 size={16} color={THEME.colors.primary} />
@@ -182,11 +378,22 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({
                   <View style={styles.currentIndicator}>
                     <ActivityIndicator size="small" color={THEME.colors.primary} />
                   </View>
+                ) : onDownloadSingleTrack && !isDownloadingAll ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      triggerMediumHaptic();
+                      onDownloadSingleTrack(track);
+                    }}
+                    style={styles.singleDownloadBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Download size={13} color={THEME.colors.primary} strokeWidth={2.2} />
+                  </TouchableOpacity>
                 ) : (
-                  <Clock size={14} color={THEME.colors.textSubtle} />
+                  <Clock size={13} color={THEME.colors.textSubtle} />
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -208,7 +415,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   iconBox: {
     width: 36,
@@ -232,6 +439,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.colors.primary,
     fontWeight: '500',
+  },
+  selectionBar: {
+    backgroundColor: THEME.colors.background,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    marginBottom: 12,
+  },
+  selectionCountBox: {
+    marginBottom: 8,
+  },
+  selectionCountText: {
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    fontWeight: '500',
+  },
+  highlightNumber: {
+    color: THEME.colors.primary,
+    fontWeight: '700',
+  },
+  presetsList: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  presetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: THEME.colors.surface,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  presetChipActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: THEME.colors.primary,
+  },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textSubtle,
+  },
+  presetChipTextActive: {
+    color: THEME.colors.primary,
   },
   progressContainer: {
     backgroundColor: THEME.colors.background,
@@ -321,12 +572,22 @@ const styles = StyleSheet.create({
     borderTopColor: THEME.colors.border,
     paddingTop: 12,
   },
+  listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   listHeading: {
     fontSize: 10,
     fontWeight: '700',
     color: THEME.colors.textSubtle,
     letterSpacing: 1.2,
-    marginBottom: 10,
+  },
+  listSubHint: {
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+    fontStyle: 'italic',
   },
   trackRow: {
     flexDirection: 'row',
@@ -335,7 +596,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 8,
     marginBottom: 4,
-    gap: 10,
+    gap: 8,
+  },
+  trackRowSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
   },
   trackRowActive: {
     backgroundColor: 'rgba(16, 185, 129, 0.08)',
@@ -345,15 +609,33 @@ const styles = StyleSheet.create({
   trackRowDone: {
     opacity: 0.85,
   },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.textSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  checkboxSelected: {
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
+  },
+  checkboxDone: {
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
+  },
   trackIndex: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: THEME.colors.textSubtle,
-    width: 20,
+    width: 18,
     textAlign: 'center',
   },
-  trackIndexActive: {
-    color: THEME.colors.primary,
+  trackIndexSelected: {
+    color: THEME.colors.text,
   },
   trackThumb: {
     width: 36,
@@ -378,8 +660,11 @@ const styles = StyleSheet.create({
   trackTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: THEME.colors.text,
+    color: THEME.colors.textSubtle,
     marginBottom: 2,
+  },
+  trackTitleSelected: {
+    color: THEME.colors.text,
   },
   trackTitleActive: {
     color: THEME.colors.primary,
@@ -389,10 +674,18 @@ const styles = StyleSheet.create({
   },
   trackArtist: {
     fontSize: 11,
-    color: THEME.colors.textSubtle,
+    color: THEME.colors.textMuted,
   },
   statusCol: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  singleDownloadBtn: {
     width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
