@@ -106,22 +106,44 @@ export default function App() {
   const handleStartDownload = async () => {
     if (!metadata) return;
 
-    triggerSuccessHaptic();
-    const downloadUrl = getAudioDownloadUrl(metadata.url, metadata.title);
+    setStatus('downloading');
+    setStatusMessage('Initiating 320 kbps stream...');
+    setErrorMessage(null);
 
-    // Launch Android native DownloadManager immediately:
-    // Shows in Notification bar and saves directly to /Downloads folder with 0 socket timeout!
-    await startNativeBrowserDownload(downloadUrl);
-
-    setDownloadResult({
-      localUri: downloadUrl,
-      filename: `${(metadata.title || 'Audio').replace(/[^a-zA-Z0-9\s-_]/g, '')}.mp3`,
-      fileSizeBytes: 8900000,
+    setProgress({
+      totalBytes: 0,
+      bytesDownloaded: 0,
+      percentage: 0,
+      downloadedMb: '0.0 MB',
+      totalMb: metadata.estimatedSizeMb || '8.0 MB',
     });
-    setStatus('completed');
+
+    try {
+      const result = await downloadAndSaveAudio({
+        metadata,
+        onProgress: (p) => {
+          setProgress(p);
+        },
+        onStatusChange: (msg) => {
+          setStatusMessage(msg);
+        },
+      });
+
+      setDownloadResult(result);
+      setStatus('completed');
+      triggerSuccessHaptic();
+    } catch (err: any) {
+      console.error('Download error:', err);
+      setErrorMessage(
+        err.message ||
+          'Download failed. Please check network connectivity and storage permissions.'
+      );
+      setStatus('error');
+      triggerErrorHaptic();
+    }
   };
 
-  // 2b. Start Sequential Native Downloads (Playlist - Selected Tracks into /Downloads folder with Notification)
+  // 2b. Start Sequential 320 kbps Download Queue (Playlist - Selected Tracks One by One)
   const handleDownloadSelectedPlaylist = async (selectedIds: string[]) => {
     if (!playlist || playlist.tracks.length === 0 || isDownloadingPlaylist) return;
 
@@ -136,7 +158,7 @@ export default function App() {
 
     for (let i = 0; i < tracksToDownload.length; i++) {
       setCurrentPlaylistIndex(i);
-      setCurrentTrackProgress(50);
+      setCurrentTrackProgress(0);
 
       const targetTrack = tracksToDownload[i];
       const trackIndexInFull = updatedTracks.findIndex((t) => t.id === targetTrack.id);
@@ -145,40 +167,65 @@ export default function App() {
         setPlaylist((prev) => (prev ? { ...prev, tracks: [...updatedTracks] } : null));
       }
 
+      const trackMeta: MediaMetadata = {
+        id: targetTrack.id,
+        title: targetTrack.title,
+        artist: targetTrack.artist,
+        duration: targetTrack.duration,
+        durationFormatted: targetTrack.durationFormatted,
+        thumbnail: targetTrack.thumbnail,
+        source: 'YouTube Playlist',
+        bitrate: '320 kbps',
+        qualityBadge: 'Ultra HD 320 kbps',
+        estimatedSizeMb: `${((targetTrack.duration * 40) / 1024).toFixed(1)} MB`,
+        url: targetTrack.url,
+      };
+
       try {
-        const downloadUrl = getAudioDownloadUrl(targetTrack.url, targetTrack.title);
-        await startNativeBrowserDownload(downloadUrl);
-        setCurrentTrackProgress(100);
+        await downloadAndSaveAudio({
+          metadata: trackMeta,
+          onProgress: (p) => {
+            setCurrentTrackProgress(p.percentage);
+          },
+          onStatusChange: () => {},
+        });
 
         if (trackIndexInFull !== -1) {
           updatedTracks[trackIndexInFull].status = 'completed';
         }
         setPlaylistCompletedCount((prev) => prev + 1);
       } catch (err: any) {
-        console.error(`Failed to trigger download for ${targetTrack.title}:`, err);
+        console.error(`Failed to download track ${targetTrack.title}:`, err);
         if (trackIndexInFull !== -1) {
           updatedTracks[trackIndexInFull].status = 'error';
         }
       }
 
       setPlaylist((prev) => (prev ? { ...prev, tracks: [...updatedTracks] } : null));
-
-      // Small delay between tracks so Android Download Manager queues each in notification bar cleanly
-      if (i < tracksToDownload.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
     }
 
     setIsDownloadingPlaylist(false);
     triggerSuccessHaptic();
   };
 
-  // 2c. Download a single track directly from playlist preview with Native Notification
-  const handleDownloadSingleTrackFromPlaylist = async (track: PlaylistTrack) => {
-    triggerLightHaptic();
-    const downloadUrl = getAudioDownloadUrl(track.url, track.title);
-    await startNativeBrowserDownload(downloadUrl);
-    triggerSuccessHaptic();
+  // 2c. Download a single track directly from playlist preview
+  const handleDownloadSingleTrackFromPlaylist = (track: PlaylistTrack) => {
+    const trackMeta: MediaMetadata = {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      duration: track.duration,
+      durationFormatted: track.durationFormatted,
+      thumbnail: track.thumbnail,
+      source: 'YouTube Playlist',
+      bitrate: '320 kbps',
+      qualityBadge: 'Ultra HD 320 kbps',
+      estimatedSizeMb: `${((track.duration * 40) / 1024).toFixed(1)} MB`,
+      url: track.url,
+    };
+    setMetadata(trackMeta);
+    setInputMode('single');
+    setStatus('ready');
   };
 
   // 3. Reset to prepare another track or playlist

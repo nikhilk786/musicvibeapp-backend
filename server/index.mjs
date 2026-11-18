@@ -218,7 +218,7 @@ app.get('/api/playlist', async (req, res) => {
   }
 });
 
-// 3. Audio Extraction & 320 kbps MP3 endpoint
+// 3. Audio Streaming & 320 kbps MP3 endpoint
 app.get('/api/download', async (req, res) => {
   const { url, title } = req.query;
 
@@ -228,66 +228,84 @@ app.get('/api/download', async (req, res) => {
 
   const safeTitle = sanitizeFilename(title);
 
+  // Send and flush HTTP headers immediately so client connects without timeout
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('X-Audio-Bitrate', '320kbps');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
   // If Demo / Offline mode: generate a high-fidelity synthetic 320 kbps audio stream
   if (url.includes('demo') || url.includes('test') || url.includes('sample')) {
     console.log('[Stream] Generating Demo 320 kbps MP3 stream...');
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.mp3"`);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('X-Audio-Bitrate', '320kbps');
-
     const ffmpegDemo = spawn('ffmpeg', [
       '-f', 'lavfi',
       '-i', 'anoisesrc=d=20:c=pink:r=44100:a=0.03,lowpass=f=800[bg];sine=frequency=432:duration=20[s1];sine=frequency=216:duration=20[s2];[bg][s1][s2]amix=inputs=3:dropout_transition=2',
       '-codec:a', 'libmp3lame',
       '-b:a', '320k',
-      '-id3v2_version', '3',
-      '-metadata', 'title=Emerald Resonance (Botanical 320 kbps)',
-      '-metadata', 'artist=Forest Echoes',
-      '-metadata', 'album=Mitti Earth Sessions',
       '-f', 'mp3',
       'pipe:1'
     ]);
 
     ffmpegDemo.stdout.pipe(res);
     ffmpegDemo.stderr.on('data', () => {});
-    ffmpegDemo.on('close', () => {
-      console.log('[Stream] Demo 320 kbps stream finished.');
-    });
     req.on('close', () => {
-      ffmpegDemo.kill();
+      try { ffmpegDemo.kill(); } catch (e) {}
     });
     return;
   }
 
-  const tempId = `song_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const tempPath = `/tmp/${tempId}.mp3`;
-  const template = `/tmp/${tempId}.%(ext)s`;
-
-  console.log(`[Download] Starting native 320 kbps extraction for: ${url}`);
+  console.log(`[Stream] Processing real audio from: ${url}`);
 
   try {
-    // Native yt-dlp + ffmpeg 320 kbps MP3 conversion with tv_samsung client (zero bot check)
-    const cmd = `${YTDLP_BIN} --extractor-args "youtube:player_client=tv_samsung" -x --audio-format mp3 --audio-quality 320k --no-playlist --no-warnings -o "${template}" "${url}"`;
-    await execAsync(cmd, { timeout: 60000 });
+    // Pipe 1: yt-dlp extracts raw stream with tv_samsung client (zero bot check)
+    const ytdl = spawn(YTDLP_BIN, [
+      '--extractor-args', 'youtube:player_client=tv_samsung',
+      '-f', 'bestaudio/best',
+      '-o', '-',
+      '--no-playlist',
+      '--no-warnings',
+      url
+    ]);
 
-    if (fs.existsSync(tempPath)) {
-      console.log(`[Download] Conversion complete! Serving ${tempPath} (${safeTitle}.mp3) to client...`);
-      res.download(tempPath, `${safeTitle}.mp3`, (err) => {
-        try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch (e) {}
-      });
-    } else {
-      throw new Error('320 kbps MP3 file was not generated.');
-    }
+    // Pipe 2: ffmpeg receives yt-dlp stream and encodes to 320 kbps CBR MP3 with instant start
+    const ffmpeg = spawn('ffmpeg', [
+      '-probesize', '64k',
+      '-analyzeduration', '500k',
+      '-i', 'pipe:0',
+      '-vn',
+      '-codec:a', 'libmp3lame',
+      '-b:a', '320k',
+      '-ar', '44100',
+      '-id3v2_version', '3',
+      '-metadata', `title=${title || 'Downloaded Audio'}`,
+      '-f', 'mp3',
+      'pipe:1'
+    ]);
+
+    ffmpeg.stdin.on('error', () => {});
+    ytdl.stdout.on('error', () => {});
+
+    ytdl.stdout.pipe(ffmpeg.stdin);
+    ffmpeg.stdout.pipe(res);
+
+    ytdl.stderr.on('data', () => {});
+    ffmpeg.stderr.on('data', () => {});
+
+    req.on('close', () => {
+      try { ytdl.kill(); } catch (e) {}
+      try { ffmpeg.kill(); } catch (e) {}
+    });
+
+    ffmpeg.on('close', (code) => {
+      console.log(`[Stream] Transcoding completed for "${safeTitle}" with code ${code}`);
+    });
   } catch (err) {
-    console.error('[Download error]', err.message);
-    try {
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    } catch (e) {}
+    console.error('Stream spawn error:', err);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to extract audio', details: err.message });
+      res.status(500).json({ error: 'Failed to stream audio' });
     }
   }
 });
