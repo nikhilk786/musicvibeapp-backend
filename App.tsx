@@ -106,45 +106,19 @@ export default function App() {
   const handleStartDownload = async () => {
     if (!metadata) return;
 
-    setStatus('downloading');
-    setStatusMessage('Initiating 320 kbps stream...');
-    setErrorMessage(null);
+    triggerSuccessHaptic();
+    const downloadUrl = getAudioDownloadUrl(metadata.url, metadata.title);
 
-    setProgress({
-      totalBytes: 0,
-      bytesDownloaded: 0,
-      percentage: 0,
-      downloadedMb: '0.0 MB',
-      totalMb: metadata.estimatedSizeMb || '8.0 MB',
+    // Launch Android native DownloadManager immediately:
+    // Shows in Notification bar and saves directly to /Downloads folder with 0 socket timeout!
+    await startNativeBrowserDownload(downloadUrl);
+
+    setDownloadResult({
+      localUri: downloadUrl,
+      filename: `${(metadata.title || 'Audio').replace(/[^a-zA-Z0-9\s-_]/g, '')}.mp3`,
+      fileSizeBytes: 8900000,
     });
-
-    try {
-      const result = await downloadAndSaveAudio({
-        metadata,
-        onProgress: (p) => {
-          setProgress(p);
-        },
-        onStatusChange: (msg) => {
-          setStatusMessage(msg);
-        },
-      });
-
-      setDownloadResult(result);
-      setStatus('completed');
-      triggerSuccessHaptic();
-    } catch (err: any) {
-      console.warn('In-app background stream note, switching to native DownloadManager:', err);
-      // Auto-fallback to Native Android DownloadManager: triggers notification & saves to /Downloads
-      const downloadUrl = getAudioDownloadUrl(metadata.url, metadata.title);
-      await startNativeBrowserDownload(downloadUrl);
-      setDownloadResult({
-        localUri: downloadUrl,
-        filename: `${(metadata.title || 'Audio').replace(/[^a-zA-Z0-9\s-_]/g, '')}.mp3`,
-        fileSizeBytes: 8900000,
-      });
-      setStatus('completed');
-      triggerSuccessHaptic();
-    }
+    setStatus('completed');
   };
 
   // 2b. Start Sequential Native Downloads (Playlist - Selected Tracks into /Downloads folder with Notification)
