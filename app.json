@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Music Downloader",
+    "slug": "music-downloader",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0c0e0c"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.musicdownloader.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Music Downloader needs access to save downloaded MP3 songs to your music library.",
+        "NSPhotoLibraryAddUsageDescription": "Music Downloader needs permission to add downloaded 320 kbps MP3 files to your audio library."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0c0e0c"
+      },
+      "package": "com.musicdownloader.app",
+      "permissions": [
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Grant permission to access media",
+          "savePhotosPermission": "Grant permission to save audio files",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
+    ]
+  }
+}
